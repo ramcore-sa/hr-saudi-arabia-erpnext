@@ -58,6 +58,15 @@ def sync_desktop_workspace_icon():
 	if not frappe.db.exists("DocType", "Desktop Icon") or not frappe.db.exists("Workspace", "Saudi HR"):
 		return
 
+	# Newer v16 builds keep no icon rows at all on a site whose desktop is the Apps screen, and
+	# Frappe's own fixture import skips them the same way. Older builds have no such setting.
+	try:
+		from frappe.desk.doctype.desktop_settings.desktop_settings import is_desktop_icons_page
+	except ImportError:
+		is_desktop_icons_page = None
+	if is_desktop_icons_page and not is_desktop_icons_page():
+		return
+
 	meta = frappe.get_meta("Desktop Icon")
 	lookup_filters = {"label": "Saudi HR"}
 	if meta.has_field("icon_type"):
@@ -87,10 +96,17 @@ def sync_desktop_workspace_icon():
 	if icon_name:
 		icon = frappe.get_doc("Desktop Icon", icon_name)
 		icon.update(values)
-		icon.save(ignore_permissions=True)
 	else:
 		icon = frappe.get_doc({"doctype": "Desktop Icon", **values})
+	# `link_to` is a Dynamic Link typed off `link_type`, so it looks for a `Workspace Sidebar`
+	# named Saudi HR. Newer v16 builds no longer import `workspace_sidebar/` (the module's
+	# `sidebar/` replaces it), so that document never exists and validating the link aborted
+	# install and migrate. Frappe ignores links on this column for the same reason.
+	icon.flags.ignore_links = True
+	if icon.is_new():
 		icon.insert(ignore_permissions=True)
+	else:
+		icon.save(ignore_permissions=True)
 
 	duplicate_filters = {"label": "Saudi HR"}
 	if meta.has_field("icon_type"):
